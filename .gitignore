@@ -1,0 +1,24 @@
+# MediaPipe model - downloadable, no need to commit
+*.task
+
+# data folders
+asl_local/
+asl_samples/
+data/
+
+# landmark CSVs and model pickles - too large, live on Drive
+*.csv
+*.pkl
+
+# macOS
+.DS_Store
+.Rhistory
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# zip files
+*.zip
