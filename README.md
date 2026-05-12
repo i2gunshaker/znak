@@ -52,14 +52,14 @@ Scale normalization makes the feature vector invariant to hand size and camera d
 
 Six classifiers trained and tuned. CV on original split, winner refit on augmented data (rotation ±15°, Gaussian noise σ=0.01, random x-flip — 27k → 81k samples).
 
-| Model | Test accuracy |
-|---|---|
-| Logistic Regression | 94.45% |
-| Random Forest | 97.46% |
-| SVM | 97.52% |
-| KNN | 98.33% |
-| LightGBM | 98.33% |
-| **MLP (512→256)** | **98.86%** |
+| Model | CV accuracy | Test accuracy |
+|---|---|---|
+| Logistic Regression | 95.25% | 94.45% |
+| Random Forest | 97.71% | 97.46% |
+| SVM | 96.74% | 97.52% |
+| KNN | 98.02% | 98.33% |
+| LightGBM | 98.06% | 98.33% |
+| **MLP (512→256)** | **98.48%** | **98.86%** |
 
 Best params: `hidden_layer_sizes=(512, 256)`, `alpha=0.0001`, `learning_rate_init=0.001`.
 
