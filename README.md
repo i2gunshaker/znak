@@ -54,14 +54,14 @@ Six classifiers trained and tuned. CV on original split, winner refit on augment
 
 | Model | Test accuracy |
 |---|---|
-| Logistic Regression | 94.47% |
-| Random Forest | 97.49% |
+| Logistic Regression | 94.45% |
+| Random Forest | 97.46% |
+| SVM | 97.52% |
 | KNN | 98.33% |
-| LightGBM | 98.39% |
-| SVM | 98.47% |
-| **MLP (512→256)** | **98.94%** |
+| LightGBM | 98.33% |
+| **MLP (512→256)** | **98.86%** |
 
-Best params: `hidden_layer_sizes=(512, 256)`, `alpha=0.001`, `learning_rate_init=0.0005`.
+Best params: `hidden_layer_sizes=(512, 256)`, `alpha=0.0001`, `learning_rate_init=0.001`.
 
 ---
 
@@ -86,7 +86,7 @@ znak/
 │   ├── views.py                   # pages: home, lesson, practice, challenge, words
 │   ├── real_model.py              # MediaPipe + MLP inference
 │   ├── letters.py                 # alphabet metadata, levels, word lists
-│   ├── best_model.pkl             # trained MLP (98.94% test accuracy)
+│   ├── best_model.pkl             # trained MLP (98.86% test accuracy)
 │   ├── label_encoder.pkl
 │   └── packages.txt
 ├── requirements.txt
