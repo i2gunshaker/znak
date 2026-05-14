@@ -21,3 +21,4 @@ asl_samples/
 
 # logs
 *.log
+app/progress.json
