@@ -7,6 +7,7 @@ the callback) and the main Streamlit thread via a module-level dict
 protected by a lock.
 """
 
+import collections
 import logging
 import random
 import sys
@@ -50,6 +51,7 @@ _state = {
 }
 _hands_detector = None
 _hands_lock = threading.Lock()
+_prediction_buffer = collections.deque(maxlen=7)
 
 
 def _get_hands_detector():
@@ -63,6 +65,8 @@ def _get_hands_detector():
 
 def set_target_letter(letter):
     with _state_lock:
+        if _state["target_letter"] != letter:
+            _prediction_buffer.clear()
         _state["target_letter"] = letter
 
 
@@ -106,6 +110,13 @@ def video_frame_callback(frame):
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
         result = predict(img, target_letter=target, hands_detector=hands)
+
+        if result["hand_detected"]:
+            _prediction_buffer.append(result["letter"])
+            smoothed = collections.Counter(_prediction_buffer).most_common(1)[0][0]
+            result = {**result, "letter": smoothed}
+        else:
+            _prediction_buffer.clear()
 
         with _state_lock:
             _state["latest_prediction"] = result
@@ -181,7 +192,7 @@ def grab_prediction(ctx):
     is_playing = bool(ctx and getattr(ctx.state, "playing", False))
 
     if not is_playing and snap["frames"] == 0:
-        return None, "Camera is not running. Click START on the camera panel."
+        return None, "Camera is starting up…"
 
     if snap["prediction"] is None:
         if snap["frames"] == 0:
@@ -342,6 +353,34 @@ def render_home():
         if st.button("📝  Words", use_container_width=True, key="qa_words"):
             goto("word")
 
+    if s.letter_stats:
+        st.markdown("<h2 class='section-title'>📊 Per-letter accuracy</h2>", unsafe_allow_html=True)
+        rows = []
+        for letter in ALPHABET:
+            if letter in s.letter_stats:
+                stats = s.letter_stats[letter]
+                total = stats["total"]
+                correct = stats["correct"]
+                pct = correct / total if total else 0
+                rows.append((letter, correct, total, pct))
+
+        n_cols = min(6, len(rows))
+        cols = st.columns(n_cols)
+        for i, (letter, correct, total, pct) in enumerate(rows):
+            with cols[i % n_cols]:
+                color = "#58CC02" if pct >= 0.8 else "#FFD43B" if pct >= 0.5 else "#FF5252"
+                st.markdown(
+                    f"""
+                    <div style="text-align:center; padding:0.5rem; background:var(--bg-card);
+                                border-radius:12px; margin-bottom:0.5rem;">
+                        <div style="font-size:1.3rem; font-weight:900;">{letter}</div>
+                        <div style="font-size:0.8rem; color:{color}; font-weight:700;">{pct:.0%}</div>
+                        <div style="font-size:0.7rem; color:var(--text-muted);">{correct}/{total}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
     st.markdown("<h2 class='section-title'>Learning path</h2>", unsafe_allow_html=True)
 
     for i, level in enumerate(LEVELS):
@@ -451,13 +490,17 @@ def render_lesson():
             s.last_prediction = pred
             s.last_error = err
 
-            if pred and _is_correct(pred, letter):
-                s.lesson_correct += 1
-                if s.lesson_correct >= REQUIRED_CORRECT and letter not in s.completed_letters:
-                    s.completed_letters = s.completed_letters | {letter}
-                    s.xp += 10
-            elif pred is not None:
-                s.lesson_correct = max(0, s.lesson_correct - 1)
+            if pred is not None:
+                stats = s.letter_stats.setdefault(letter, {"correct": 0, "total": 0})
+                stats["total"] += 1
+                if _is_correct(pred, letter):
+                    stats["correct"] += 1
+                    s.lesson_correct += 1
+                    if s.lesson_correct >= REQUIRED_CORRECT and letter not in s.completed_letters:
+                        s.completed_letters = s.completed_letters | {letter}
+                        s.xp += 10
+                else:
+                    s.lesson_correct = max(0, s.lesson_correct - 1)
             st.rerun()
 
     if s.last_prediction or s.last_error:
@@ -531,28 +574,48 @@ def render_practice():
 
     target = s.practice_letter
 
+    show_hint = st.toggle("💡 Show hint", key="practice_hint", value=False)
+
     left, right = st.columns(2)
     with left:
-        st.markdown(
-            f"""
-            <div class="card letter-card">
-                <div class="letter-label">Sign this letter</div>
-                <div class="big-letter">{target}</div>
-                <div class="letter-desc subtle">no hints 🤐</div>
-            </div>
-            <div class="practice-stats">
-                <div class="big-stat">
-                    <div class="value">{s.practice_correct}</div>
-                    <div class="label">Correct</div>
+        if show_hint:
+            info = LETTERS.get(target, {"emoji": "❓", "description": "", "tips": []})
+            st.markdown(
+                f"""
+                <div class="card letter-card">
+                    <div class="letter-label">Sign this letter</div>
+                    <div class="big-letter">{target}</div>
+                    <div class="big-emoji">{info['emoji']}</div>
+                    <div class="letter-desc">{info['description']}</div>
                 </div>
-                <div class="big-stat">
-                    <div class="value">{s.practice_total}</div>
-                    <div class="label">Total</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            tip_cols = st.columns(len(info["tips"])) if info["tips"] else []
+            for col, tip in zip(tip_cols, info["tips"]):
+                with col:
+                    st.markdown(f"<div class='tip-card'>{tip}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f"""
+                <div class="card letter-card">
+                    <div class="letter-label">Sign this letter</div>
+                    <div class="big-letter">{target}</div>
+                    <div class="letter-desc subtle">no hints 🤐</div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                <div class="practice-stats">
+                    <div class="big-stat">
+                        <div class="value">{s.practice_correct}</div>
+                        <div class="label">Correct</div>
+                    </div>
+                    <div class="big-stat">
+                        <div class="value">{s.practice_total}</div>
+                        <div class="label">Total</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     with right:
         ctx = render_camera(target_letter=target, key="cam_main")
@@ -565,9 +628,12 @@ def render_practice():
                 s.last_error = err
                 if pred is not None:
                     s.practice_total += 1
+                    stats = s.letter_stats.setdefault(target, {"correct": 0, "total": 0})
+                    stats["total"] += 1
                     if _is_correct(pred, target):
                         s.practice_correct += 1
                         s.xp += 2
+                        stats["correct"] += 1
                         s.practice_letter = random.choice(pool)
                         s.last_prediction = None
                 st.rerun()
@@ -703,9 +769,12 @@ def render_challenge():
             s.last_prediction = pred
             s.last_error = err
             if pred is not None:
+                stats = s.letter_stats.setdefault(target, {"correct": 0, "total": 0})
+                stats["total"] += 1
                 if _is_correct(pred, target):
                     s.challenge_score += 1
                     s.xp += 5
+                    stats["correct"] += 1
                     s.challenge_letter = random.choice(pool)
                     s.last_prediction = None
                 else:

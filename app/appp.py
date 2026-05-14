@@ -13,6 +13,7 @@ Files:
     label_encoder.pkl  — label encoder (must be in this folder)
 """
 
+import json
 import os
 import streamlit as st
 
@@ -732,6 +733,38 @@ st.markdown(CSS, unsafe_allow_html=True)
 # Session state init
 # ============================================================================
 
+PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "progress.json")
+
+
+def save_progress():
+    s = st.session_state
+    try:
+        data = {
+            "xp": s.get("xp", 0),
+            "streak": s.get("streak", 1),
+            "completed_letters": list(s.get("completed_letters", set())),
+            "letter_stats": s.get("letter_stats", {}),
+            "practice_correct": s.get("practice_correct", 0),
+            "practice_total": s.get("practice_total", 0),
+        }
+        with open(PROGRESS_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def load_progress():
+    try:
+        if os.path.exists(PROGRESS_FILE):
+            with open(PROGRESS_FILE) as f:
+                data = json.load(f)
+            data["completed_letters"] = set(data.get("completed_letters", []))
+            return data
+    except Exception:
+        pass
+    return {}
+
+
 def init_state():
     defaults = {
         "page": "home",
@@ -739,6 +772,7 @@ def init_state():
         "streak": 1,
         "hearts": 5,
         "completed_letters": set(),
+        "letter_stats": {},
         "current_letter": None,
         "lesson_correct": 0,
         "last_prediction": None,
@@ -755,9 +789,10 @@ def init_state():
         "word_index": 0,
         "word_done": False,
     }
+    saved = load_progress()
     for k, v in defaults.items():
         if k not in st.session_state:
-            st.session_state[k] = v
+            st.session_state[k] = saved.get(k, v)
 
 
 init_state()
@@ -795,6 +830,8 @@ with st.sidebar:
     st.markdown("**Dev tools**")
 
     if st.button("🔄  Reset progress", key="reset_progress"):
+        if os.path.exists(PROGRESS_FILE):
+            os.remove(PROGRESS_FILE)
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
@@ -822,3 +859,4 @@ ROUTES = {
 }
 
 ROUTES.get(st.session_state.page, render_home)()
+save_progress()
