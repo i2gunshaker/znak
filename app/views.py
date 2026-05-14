@@ -166,6 +166,7 @@ def render_camera(target_letter, key):
         video_frame_callback=video_frame_callback,
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True,
+        desired_playing_state=True,
     )
     return ctx
 

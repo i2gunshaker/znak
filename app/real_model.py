@@ -30,18 +30,14 @@ from letters import SPECIAL_CLASSES
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "best_model.pkl")
 ENCODER_PATH = os.path.join(os.path.dirname(__file__), "label_encoder.pkl")
 
-_model = None
-_encoder = None
-
-
 def _load_model():
-    global _model, _encoder
-    if _model is None:
-        with open(MODEL_PATH, "rb") as f:
-            _model = pickle.load(f)
-        with open(ENCODER_PATH, "rb") as f:
-            _encoder = pickle.load(f)
-    return _model, _encoder
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
+    with open(ENCODER_PATH, "rb") as f:
+        encoder = pickle.load(f)
+    return model, encoder
+
+_model, _encoder = _load_model()
 
 
 # --------------------------------------------------------------------------
@@ -141,7 +137,7 @@ def create_hands_detector():
     IMPORTANT: each thread needs its own instance — do NOT share across threads.
     """
     return mp.solutions.hands.Hands(
-        static_image_mode=True,
+        static_image_mode=False,
         max_num_hands=1,
         min_detection_confidence=0.6,
         min_tracking_confidence=0.5,
@@ -182,7 +178,6 @@ def predict(
             "feedback": "No frame from camera",
         }
 
-    model, encoder = _load_model()
     hands = hands_detector if hands_detector is not None else create_hands_detector()
 
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -203,9 +198,9 @@ def predict(
     landmarks = result.multi_hand_landmarks[0].landmark
     features = extract_features(landmarks).reshape(1, -1)
 
-    proba = model.predict_proba(features)[0]
+    proba = _model.predict_proba(features)[0]
     best_idx = int(np.argmax(proba))
-    letter = encoder.inverse_transform([best_idx])[0]
+    letter = _encoder.inverse_transform([best_idx])[0]
     confidence = float(proba[best_idx])
 
     feedback = _make_feedback(letter, target_letter, confidence)
