@@ -2,7 +2,7 @@
 
 Real-time American Sign Language alphabet trainer. MediaPipe extracts hand landmarks from your webcam, an MLP classifier predicts the sign, and a Duolingo-style UI tracks your progress.
 
-**[Live demo →](https://asl-learning-app-slise-of-life.streamlit.app)**
+**[Live demo →](https://znak-asl.streamlit.app)**
 
 ---
 
