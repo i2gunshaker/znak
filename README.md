@@ -1,6 +1,6 @@
 # 🤟 Znak — ASL Fingerspelling Trainer
 
-Real-time American Sign Language alphabet trainer. MediaPipe extracts hand landmarks from your webcam, an MLP classifier predicts the sign, and a Duolingo-style UI tracks your progress.
+Real-time American Sign Language alphabet trainer. MediaPipe extracts hand landmarks from your webcam, an MLP classifier predicts the sign, and a Duolingo-style UI tracks your progress
 
 **[Live demo →](https://znak-asl.streamlit.app)**
 
