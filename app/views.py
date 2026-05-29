@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import traceback
+from collections.abc import Mapping
 
 import av
 import cv2
@@ -30,6 +31,56 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter("[%(asctime)s] [%(name)s] %(message)s"))
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
+
+
+def _patch_aioice_closed_transport_retry():
+    """
+    aioice 0.10.x can leave STUN retry timers alive after aiortc closes the
+    UDP transport. Streamlit Cloud reports that shutdown race as noisy
+    NoneType.sendto tracebacks, so swallow only that exact closed-transport
+    case and let all other ICE errors bubble normally.
+    """
+    try:
+        from aioice import stun
+    except Exception as exc:
+        logger.debug("aioice retry patch skipped: %s", exc)
+        return
+
+    transaction_cls = getattr(stun, "Transaction", None)
+    original_retry = getattr(transaction_cls, "_Transaction__retry", None)
+    if original_retry is None or getattr(original_retry, "_znak_patched", False):
+        return
+
+    def safe_retry(self, *args, **kwargs):
+        try:
+            return original_retry(self, *args, **kwargs)
+        except AttributeError as exc:
+            message = str(exc)
+            if "NoneType" not in message or (
+                "sendto" not in message and "call_exception_handler" not in message
+            ):
+                raise
+
+            future = getattr(self, "_Transaction__future", None)
+            if future is not None and not future.done():
+                timeout_cls = getattr(stun, "TransactionTimeout", TimeoutError)
+                try:
+                    future.set_exception(timeout_cls())
+                except Exception:
+                    pass
+
+            timeout_handle = getattr(self, "_Transaction__timeout_handle", None)
+            if timeout_handle is not None:
+                timeout_handle.cancel()
+
+            logger.debug("Ignored aioice STUN retry after closed transport: %s", exc)
+            return None
+
+    safe_retry._znak_patched = True
+    setattr(transaction_cls, "_Transaction__retry", safe_retry)
+
+
+_patch_aioice_closed_transport_retry()
 
 
 REQUIRED_CORRECT = 3
@@ -49,18 +100,20 @@ _state = {
     "frame_count": 0,
     "predict_count": 0,
 }
-_hands_detector = None
-_hands_lock = threading.Lock()
+_hands_local = threading.local()
 _prediction_buffer = collections.deque(maxlen=7)
 
 
 def _get_hands_detector():
-    global _hands_detector
-    with _hands_lock:
-        if _hands_detector is None:
-            _hands_detector = create_hands_detector()
-            logger.info("MediaPipe Hands detector initialized")
-    return _hands_detector
+    hands_detector = getattr(_hands_local, "hands_detector", None)
+    if hands_detector is None:
+        hands_detector = create_hands_detector()
+        _hands_local.hands_detector = hands_detector
+        logger.info(
+            "MediaPipe Hands detector initialized for %s",
+            threading.current_thread().name,
+        )
+    return hands_detector
 
 
 def set_target_letter(letter):
@@ -157,24 +210,56 @@ def video_frame_callback(frame):
 
 
 # ============================================================================
-# WebRTC streamer — TURN server routes around university/firewall P2P blocks
+# WebRTC streamer
 # ============================================================================
 
-RTC_CONFIGURATION = {
+DEFAULT_RTC_CONFIGURATION = {
     "iceServers": [
         {"urls": ["stun:stun.l.google.com:19302"]},
-        {
-            "urls": ["turn:openrelay.metered.ca:80"],
-            "username": "openrelayproject",
-            "credential": "openrelayproject",
-        },
-        {
-            "urls": ["turn:openrelay.metered.ca:443?transport=tcp"],
-            "username": "openrelayproject",
-            "credential": "openrelayproject",
-        },
     ]
 }
+
+
+def _to_plain_value(value):
+    if isinstance(value, Mapping):
+        return {key: _to_plain_value(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_plain_value(val) for val in value]
+    return value
+
+
+def _load_rtc_configuration():
+    """
+    Keep the public default minimal. If TURN is needed in Streamlit Cloud,
+    provide your own credentials in secrets instead of relying on public relays.
+    """
+    try:
+        webrtc_secrets = st.secrets.get("webrtc", {})
+    except Exception:
+        return DEFAULT_RTC_CONFIGURATION
+
+    if not webrtc_secrets:
+        return DEFAULT_RTC_CONFIGURATION
+
+    try:
+        if "rtc_configuration" in webrtc_secrets:
+            config = _to_plain_value(webrtc_secrets["rtc_configuration"])
+        elif "ice_servers" in webrtc_secrets:
+            config = {"iceServers": _to_plain_value(webrtc_secrets["ice_servers"])}
+        else:
+            return DEFAULT_RTC_CONFIGURATION
+    except Exception as exc:
+        logger.warning("Invalid WebRTC secrets, using default STUN config: %s", exc)
+        return DEFAULT_RTC_CONFIGURATION
+
+    if not isinstance(config, dict) or not config.get("iceServers"):
+        logger.warning("WebRTC secrets did not include iceServers, using default STUN config")
+        return DEFAULT_RTC_CONFIGURATION
+
+    return config
+
+
+RTC_CONFIGURATION = _load_rtc_configuration()
 
 
 def render_camera(target_letter, key):

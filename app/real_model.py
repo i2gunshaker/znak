@@ -14,7 +14,15 @@ from __future__ import annotations
 import os
 import pickle
 import random
+import warnings
 from typing import Optional
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"SymbolDatabase\.GetPrototype\(\) is deprecated.*",
+    category=UserWarning,
+    module=r"google\.protobuf\.symbol_database",
+)
 
 import cv2
 import mediapipe as mp

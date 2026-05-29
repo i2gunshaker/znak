@@ -106,3 +106,17 @@ cd app
 streamlit run appp.py                                            # Windows / Linux
 OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES streamlit run appp.py   # macOS
 ```
+
+## Streamlit Cloud WebRTC
+
+The app defaults to Google's public STUN server. If users sit behind a strict
+network and the camera cannot connect, add your own TURN provider in Streamlit
+Cloud secrets:
+
+```toml
+[webrtc]
+ice_servers = [
+  { urls = ["stun:stun.l.google.com:19302"] },
+  { urls = ["turn:turn.example.com:3478"], username = "user", credential = "pass" }
+]
+```
