@@ -160,15 +160,13 @@ def predict(
     frame: Optional[np.ndarray],
     target_letter: Optional[str] = None,
     hands_detector=None,
+    annotate: bool = False,
 ) -> dict:
     """
     Run prediction on a BGR frame.
 
-    Args:
-        frame: BGR image (np.ndarray) or None
-        target_letter: the letter the user is supposed to show, for feedback
-        hands_detector: optional pre-created MediaPipe Hands instance
-                        (pass one to avoid recreating per call in webrtc)
+    With annotate=True the hand skeleton is drawn onto `frame` in place, reusing
+    the same MediaPipe pass as the classifier (no second inference).
 
     Returns:
         {
@@ -198,45 +196,31 @@ def predict(
             "confidence": 0.0,
             "feedback": random.choice([
                 "Show your hand to the camera",
-                "I don't see a hand — try again",
+                "I don't see a hand, try again",
                 "Move your hand into view",
             ]),
         }
 
-    landmarks = result.multi_hand_landmarks[0].landmark
-    features = extract_features(landmarks).reshape(1, -1)
+    hand = result.multi_hand_landmarks[0]
 
+    if annotate:
+        mp.solutions.drawing_utils.draw_landmarks(
+            frame,
+            hand,
+            mp.solutions.hands.HAND_CONNECTIONS,
+            mp.solutions.drawing_utils.DrawingSpec(color=(123, 212, 47), thickness=2, circle_radius=3),
+            mp.solutions.drawing_utils.DrawingSpec(color=(255, 200, 59), thickness=2),
+        )
+
+    features = extract_features(hand.landmark).reshape(1, -1)
     proba = _model.predict_proba(features)[0]
     best_idx = int(np.argmax(proba))
     letter = _encoder.inverse_transform([best_idx])[0]
     confidence = float(proba[best_idx])
 
-    feedback = _make_feedback(letter, target_letter, confidence)
-
     return {
         "hand_detected": True,
         "letter": letter,
         "confidence": confidence,
-        "feedback": feedback,
+        "feedback": _make_feedback(letter, target_letter, confidence),
     }
-
-
-def draw_landmarks_overlay(frame: np.ndarray, hands_detector) -> np.ndarray:
-    """
-    Draw MediaPipe hand landmarks on the frame for visual feedback.
-    Returns a new frame with the overlay.
-    """
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = hands_detector.process(rgb)
-    if not result.multi_hand_landmarks:
-        return frame
-
-    out = frame.copy()
-    mp.solutions.drawing_utils.draw_landmarks(
-        out,
-        result.multi_hand_landmarks[0],
-        mp.solutions.hands.HAND_CONNECTIONS,
-        mp.solutions.drawing_utils.DrawingSpec(color=(123, 212, 47), thickness=2, circle_radius=3),
-        mp.solutions.drawing_utils.DrawingSpec(color=(255, 200, 59), thickness=2),
-    )
-    return out

@@ -97,6 +97,8 @@ CSS = """
     --error-border: rgba(255, 82, 82, 0.4);
     --info-bg: rgba(28, 176, 246, 0.15);
     --info-border: rgba(28, 176, 246, 0.4);
+    --warn-bg: rgba(255, 123, 28, 0.12);
+    --warn-border: rgba(255, 123, 28, 0.45);
 }
 
 /* Global */
@@ -688,6 +690,112 @@ section[data-testid="stSidebar"] [role="radiogroup"] label {
     text-align: left;
     font-size: 0.9rem;
 }
+
+/* Target-aware practice status */
+.live-status.match { border-color: var(--success-border); background: var(--success-bg); }
+.live-status.wrong { border-color: var(--warn-border); background: var(--warn-bg); }
+.live-status.idle2 {
+    border-color: var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.live-status.match .label,
+.live-status.wrong .label {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.live-status.match .val,
+.live-status.wrong .val {
+    color: var(--primary-bright);
+    font-family: 'Fraunces', serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    line-height: 1;
+}
+.live-status.match .conf { color: var(--xp); font-weight: 800; }
+.live-status.match .hold-hint { color: var(--primary-bright); font-weight: 800; }
+.live-status.wrong .val.wrongv { color: var(--streak); }
+.live-status.wrong .arrow { color: var(--text-muted); font-weight: 800; }
+
+/* Trust caption under the camera */
+.cam-trust {
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.4px;
+    margin: 0.4rem 0 0.25rem;
+}
+
+/* Hold-to-confirm bar */
+.hold-wrap { margin: 0.75rem 0 0.25rem; }
+.hold-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+.hold-meta .t { color: var(--primary-bright); }
+.hold-track {
+    height: 22px;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+.hold-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-bright) 100%);
+    box-shadow: 0 0 16px rgba(88, 204, 2, 0.6);
+    transition: width 0.12s linear;
+}
+.auto-note {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-top: 0.6rem;
+}
+
+/* Compact back link (overrides the global green button for this key only) */
+.st-key-practice_back button {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: var(--text-secondary) !important;
+    width: auto !important;
+    min-height: 0 !important;
+    padding: 0.3rem 0 !important;
+    font-size: 0.9rem !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+}
+.st-key-practice_back button:hover {
+    color: var(--text-primary) !important;
+    background: none !important;
+}
+.st-key-practice_back button:active { transform: none !important; box-shadow: none !important; }
+
+/* Secondary Skip button */
+.st-key-practice_skip button {
+    background: var(--bg-card) !important;
+    color: var(--text-secondary) !important;
+    border: 2px solid var(--border-strong) !important;
+    box-shadow: 0 4px 0 0 var(--border) !important;
+}
+.st-key-practice_skip button:hover {
+    background: var(--bg-card-hover) !important;
+    color: var(--text-primary) !important;
+}
+.st-key-practice_skip button:active { box-shadow: 0 1px 0 0 var(--border) !important; }
 
 /* webrtc video container styling */
 [data-testid="stWebrtcStreamer"] video {

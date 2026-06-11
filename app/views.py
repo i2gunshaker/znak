@@ -85,6 +85,7 @@ _patch_aioice_closed_transport_retry()
 
 REQUIRED_CORRECT = 3
 CONF_THRESHOLD = 0.80
+HOLD_SECONDS = 1.5
 CHALLENGE_DURATION = 60.0
 
 
@@ -99,6 +100,7 @@ _state = {
     "last_error": None,
     "frame_count": 0,
     "predict_count": 0,
+    "match_started_at": None,
 }
 _hands_local = threading.local()
 _prediction_buffer = collections.deque(maxlen=7)
@@ -120,6 +122,7 @@ def set_target_letter(letter):
     with _state_lock:
         if _state["target_letter"] != letter:
             _prediction_buffer.clear()
+            _state["match_started_at"] = None
         _state["target_letter"] = letter
 
 
@@ -136,6 +139,21 @@ def get_state_snapshot():
 def reset_state_error():
     with _state_lock:
         _state["last_error"] = None
+
+
+def get_hold_state():
+    """Progress of the current valid hold (0..1) and whether it just completed."""
+    with _state_lock:
+        started = _state["match_started_at"]
+    if started is None:
+        return 0.0, False
+    elapsed = time.time() - started
+    return min(1.0, elapsed / HOLD_SECONDS), elapsed >= HOLD_SECONDS
+
+
+def clear_hold():
+    with _state_lock:
+        _state["match_started_at"] = None
 
 
 # ============================================================================
@@ -162,7 +180,7 @@ def video_frame_callback(frame):
                         cv2.FONT_HERSHEY_DUPLEX, 0.7, (80, 80, 220), 2)
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-        result = predict(img, target_letter=target, hands_detector=hands)
+        result = predict(img, target_letter=target, hands_detector=hands, annotate=True)
 
         if result["hand_detected"]:
             _prediction_buffer.append(result["letter"])
@@ -171,27 +189,23 @@ def video_frame_callback(frame):
         else:
             _prediction_buffer.clear()
 
+        is_match = (
+            result["hand_detected"]
+            and target is not None
+            and result["letter"] == target
+            and result["letter"] not in SPECIAL_CLASSES
+            and result["confidence"] >= CONF_THRESHOLD
+        )
+
         with _state_lock:
             _state["latest_prediction"] = result
             _state["predict_count"] += 1
             _state["last_error"] = None
-
-        if result["hand_detected"]:
-            label = f"{result['letter']}  {result['confidence']:.0%}"
-            if target is None or result["letter"] == target:
-                color = (47, 212, 123)
-            elif result["letter"] in SPECIAL_CLASSES:
-                color = (200, 200, 200)
+            if is_match:
+                if _state["match_started_at"] is None:
+                    _state["match_started_at"] = time.time()
             else:
-                color = (80, 80, 220)
-
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1.0, 2)
-            cv2.rectangle(img, (12, 12), (12 + tw + 24, 12 + th + 24), (20, 22, 30), -1)
-            cv2.putText(img, label, (24, 12 + th + 12),
-                        cv2.FONT_HERSHEY_DUPLEX, 1.0, color, 2)
-        else:
-            cv2.putText(img, "Show your hand", (20, 40),
-                        cv2.FONT_HERSHEY_DUPLEX, 0.8, (200, 200, 200), 2)
+                _state["match_started_at"] = None
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
@@ -329,6 +343,45 @@ def render_live_status(ctx):
         )
 
 
+def render_target_status(pred, err, target):
+    """Camera status during practice: green on match, orange on wrong letter, neutral otherwise."""
+    if err or not pred or not pred.get("hand_detected"):
+        msg = err or "👀 No hand in frame — raise your hand into view"
+        st.markdown(
+            f"<div class='live-status idle2'>{msg}</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    letter = pred["letter"]
+    conf = pred["confidence"]
+
+    if letter == target and letter not in SPECIAL_CLASSES and conf >= CONF_THRESHOLD:
+        st.markdown(
+            f"""
+            <div class='live-status match'>
+                <span class='label'>Seeing</span>
+                <span class='val'>{letter}</span>
+                <span class='conf'>{conf:.0%}</span>
+                <span class='hold-hint'>✓ match — hold it…</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+            <div class='live-status wrong'>
+                <span class='label'>Seeing</span>
+                <span class='val wrongv'>{letter}</span>
+                <span class='arrow'>→ target is</span>
+                <span class='val'>{target}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 # ============================================================================
 # Shared UI helpers
 # ============================================================================
@@ -372,7 +425,7 @@ def render_feedback(pred, target=None, error=None):
 
     is_correct = (
         (target is None or pred["letter"] == target)
-        and pred["confidence"] >= 0.85
+        and pred["confidence"] >= CONF_THRESHOLD
         and pred["letter"] not in SPECIAL_CLASSES
     )
 
@@ -713,33 +766,65 @@ def render_practice():
 
     with right:
         ctx = render_camera(target_letter=target, key="cam_main")
-        render_live_status(ctx)
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("🤟  Check", key="practice_check", use_container_width=True):
-                pred, err = grab_prediction(ctx)
-                s.last_prediction = pred
-                s.last_error = err
-                if pred is not None:
-                    s.practice_total += 1
-                    stats = s.letter_stats.setdefault(target, {"correct": 0, "total": 0})
-                    stats["total"] += 1
-                    if _is_correct(pred, target):
-                        s.practice_correct += 1
-                        s.xp += 2
-                        stats["correct"] += 1
-                        s.practice_letter = random.choice(pool)
-                        s.last_prediction = None
-                st.rerun()
-        with c2:
-            if st.button("Skip  →", key="practice_skip", use_container_width=True):
-                s.practice_letter = random.choice(pool)
-                s.last_prediction = None
-                s.last_error = None
-                st.rerun()
+        st.markdown(
+            "<div class='cam-trust'>🔒 video never leaves your device, runs locally</div>",
+            unsafe_allow_html=True,
+        )
 
-    if s.last_prediction or s.last_error:
-        render_feedback(s.last_prediction, target=target, error=s.last_error)
+        pred, err = grab_prediction(ctx)
+        progress, completed = get_hold_state()
+        in_flash = time.time() < s.get("practice_flash_until", 0.0)
+
+        if completed and not in_flash:
+            stats = s.letter_stats.setdefault(target, {"correct": 0, "total": 0})
+            stats["total"] += 1
+            stats["correct"] += 1
+            s.practice_total += 1
+            s.practice_correct += 1
+            s.xp += 2
+            s.practice_flash = "✓ Nice! +2 XP"
+            s.practice_flash_until = time.time() + 1.2
+            s.practice_letter = random.choice(pool)
+            clear_hold()
+            st.rerun()
+
+        render_target_status(pred, err, target)
+
+        elapsed = progress * HOLD_SECONDS
+        st.markdown(
+            f"""
+            <div class='hold-wrap'>
+                <div class='hold-meta'>
+                    <span>Hold to confirm</span>
+                    <span class='t'>{elapsed:.1f}s / {HOLD_SECONDS:.1f}s</span>
+                </div>
+                <div class='hold-track'>
+                    <div class='hold-fill' style='width:{progress * 100:.0f}%'></div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if st.button("Skip →", key="practice_skip", use_container_width=True):
+            s.practice_letter = random.choice(pool)
+            clear_hold()
+            st.rerun()
+
+        st.markdown(
+            "<div class='auto-note'>advances automatically, no check needed</div>",
+            unsafe_allow_html=True,
+        )
+
+        if in_flash and s.get("practice_flash"):
+            st.markdown(
+                f"<div class='feedback success'>{s.practice_flash}</div>",
+                unsafe_allow_html=True,
+            )
+
+    playing = bool(ctx and getattr(ctx.state, "playing", False))
+    time.sleep(0.2 if playing else 0.5)
+    st.rerun()
 
 
 # ============================================================================
