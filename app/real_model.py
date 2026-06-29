@@ -160,13 +160,9 @@ def predict(
     frame: Optional[np.ndarray],
     target_letter: Optional[str] = None,
     hands_detector=None,
-    annotate: bool = False,
 ) -> dict:
     """
     Run prediction on a BGR frame.
-
-    With annotate=True the hand skeleton is drawn onto `frame` in place, reusing
-    the same MediaPipe pass as the classifier (no second inference).
 
     Returns:
         {
@@ -202,16 +198,6 @@ def predict(
         }
 
     hand = result.multi_hand_landmarks[0]
-
-    if annotate:
-        mp.solutions.drawing_utils.draw_landmarks(
-            frame,
-            hand,
-            mp.solutions.hands.HAND_CONNECTIONS,
-            mp.solutions.drawing_utils.DrawingSpec(color=(123, 212, 47), thickness=2, circle_radius=3),
-            mp.solutions.drawing_utils.DrawingSpec(color=(255, 200, 59), thickness=2),
-        )
-
     features = extract_features(hand.landmark).reshape(1, -1)
     proba = _model.predict_proba(features)[0]
     best_idx = int(np.argmax(proba))

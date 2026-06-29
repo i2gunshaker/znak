@@ -180,7 +180,7 @@ def video_frame_callback(frame):
                         cv2.FONT_HERSHEY_DUPLEX, 0.7, (80, 80, 220), 2)
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-        result = predict(img, target_letter=target, hands_detector=hands, annotate=True)
+        result = predict(img, target_letter=target, hands_detector=hands)
 
         if result["hand_detected"]:
             _prediction_buffer.append(result["letter"])
