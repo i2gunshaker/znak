@@ -1,4 +1,4 @@
-# 🤟 Znak — ASL Fingerspelling Trainer
+#  Znak — ASL Fingerspelling Trainer
 
 Real-time American Sign Language alphabet trainer. MediaPipe extracts hand landmarks from your webcam, an MLP classifier predicts the sign, and a Duolingo-style UI tracks your progress
 
